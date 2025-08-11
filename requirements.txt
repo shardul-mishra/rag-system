@@ -1,0 +1,15 @@
+fastapi==0.115.13
+uvicorn==0.34.3
+openai==1.68.2
+qdrant-client==1.14.3
+pymupdf4llm==0.0.27
+mammoth==1.10.0
+html2text==2025.4.15
+langchain-text-splitters==0.3.8
+rank-bm25==0.2.2
+cohere==5.16.3
+python-dotenv==1.1.0
+PyMuPDF==1.26.3
+numpy==1.26.2
+requests==2.31.0
+scikit-learn==1.5.1
