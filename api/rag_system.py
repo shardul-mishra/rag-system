@@ -569,25 +569,22 @@ def qdrant_search_multi(queries: List[Tuple[str, float]], doc_ids: List[str], li
     for query_text, weight in queries:
         qv = client.embeddings.create(model=EMBED_MODEL, input=[clean_for_embedding(query_text)]).data[0].embedding
         
-        flt = Filter(must=[FieldCondition(key="doc_id", match=MatchAny(any=doc_ids))])
-        
+        # NO FILTER - JUST SEARCH ALL DOCUMENTS
         try:
             res = qd.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=qv,
                 limit=limit,
-                query_filter=flt,
                 with_payload=True,
                 score_threshold=SCORE_THRESHOLD,
             )
             
-            # If no results with threshold, try with lower threshold
-            if not res and weight == 1.0:  # Only for main query
+            # If no results, try with lower threshold
+            if not res and weight == 1.0:
                 res = qd.search(
                     collection_name=QDRANT_COLLECTION,
                     query_vector=qv,
                     limit=limit,
-                    query_filter=flt,
                     with_payload=True,
                     score_threshold=max(0.1, SCORE_THRESHOLD - 0.05),
                 )
@@ -610,6 +607,8 @@ def qdrant_search_multi(queries: List[Tuple[str, float]], doc_ids: List[str], li
     results = list(all_results.values())
     results.sort(key=lambda x: x["score"], reverse=True)
     return results[:limit]
+        
+        # Rest stays same...
 
 def retrieve_with_hybrid(query: str, doc_ids: List[str], limit: int = 40) -> List[dict]:
     # Generate query variants
