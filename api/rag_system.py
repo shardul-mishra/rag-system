@@ -1,4 +1,4 @@
-# Domain-Agnostic RAG System - Clean, No Hard-Coding
+# Domain-Agnostic RAG System - Fixed with Qdrant Authentication
 # Works for ANY document type: medical, legal, technical, financial, etc.
 # NOTE: pip install -U pymupdf4llm mammoth html2text qdrant-client fastapi uvicorn python-dotenv openai rank-bm25 cohere
 
@@ -44,14 +44,14 @@ if not OPENAI_API_KEY:
 
 # Models
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-large")  # 3072 dims
-GEN_MODEL = os.getenv("GEN_MODEL", "gpt-4.1")
+GEN_MODEL = os.getenv("GEN_MODEL", "gpt-4.1") 
 
 # Reranker (optional)
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 USE_RERANK = bool(COHERE_API_KEY)
 
 # Retrieval sizes
-CANDIDATES_PER_QUERY = int(os.getenv("CANDIDATES_PER_QUERY", "40"))  # Reduced since we're more efficient
+CANDIDATES_PER_QUERY = int(os.getenv("CANDIDATES_PER_QUERY", "40"))
 RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "12"))
 MAX_CTX_CHUNKS = int(os.getenv("MAX_CTX_CHUNKS", "8"))
 
@@ -61,12 +61,13 @@ EMBEDDING_BATCH_SIZE = 10
 API_DELAY_MS = 200
 
 # Other settings
-SCORE_THRESHOLD = float(os.getenv("SCORE_THRESHOLD", "0.15"))  # Slightly higher for better precision
+SCORE_THRESHOLD = float(os.getenv("SCORE_THRESHOLD", "0.12"))
 RETURN_FORMAT = os.getenv("RETURN_FORMAT", "simple")
 USE_HYBRID_SEARCH = os.getenv("USE_HYBRID_SEARCH", "true").lower() == "true"
 
-# Qdrant settings
+# Qdrant settings - FIXED WITH API KEY
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")  # Get API key from environment
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "universal_rag_clean")
 
 def infer_embedding_dim(model: str) -> int:
@@ -97,8 +98,19 @@ md_chunker = RecursiveCharacterTextSplitter(
 
 app = FastAPI(title="Universal RAG System")
 
-# Initialize Qdrant
-qd = QdrantClient(url=QDRANT_URL, prefer_grpc=False)
+# Initialize Qdrant WITH AUTHENTICATION
+print(f"Connecting to Qdrant at: {QDRANT_URL}")
+if QDRANT_API_KEY:
+    print("Using Qdrant API key authentication")
+    qd = QdrantClient(
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
+        prefer_grpc=False,
+        timeout=30
+    )
+else:
+    print("No Qdrant API key provided, using without authentication")
+    qd = QdrantClient(url=QDRANT_URL, prefer_grpc=False, timeout=30)
 
 # ---------- Embedding Cache Management ----------
 embedding_cache: Dict[str, np.ndarray] = {}
@@ -467,26 +479,43 @@ hybrid_searcher.load_index()
 # ---------- Qdrant Collection Management ----------
 def init_qdrant_collection():
     try:
+        # Try to check existing collections
         existing = [c.name for c in qd.get_collections().collections]
         if QDRANT_COLLECTION in existing:
             print(f"Deleting existing collection: {QDRANT_COLLECTION}")
             qd.delete_collection(collection_name=QDRANT_COLLECTION)
     except Exception as e:
-        print(f"Error checking collections: {e}")
+        print(f"Error checking collections (might be authentication issue): {e}")
+        # Try to create anyway
 
-    print(f"Creating fresh collection: {QDRANT_COLLECTION}")
-    qd.create_collection(
-        collection_name=QDRANT_COLLECTION,
-        vectors_config=VectorParams(size=EMBED_DIM, distance=Distance.COSINE),
-    )
-    print("✓ Qdrant collection initialized")
+    try:
+        print(f"Creating fresh collection: {QDRANT_COLLECTION}")
+        qd.create_collection(
+            collection_name=QDRANT_COLLECTION,
+            vectors_config=VectorParams(size=EMBED_DIM, distance=Distance.COSINE),
+        )
+        print("✓ Qdrant collection initialized")
+    except Exception as e:
+        print(f"Error creating collection: {e}")
+        print("Will attempt to use existing collection if available")
 
-init_qdrant_collection()
+# Only initialize Qdrant if not skipped
+if QDRANT_URL.lower() != "skip":
+    try:
+        init_qdrant_collection()
+    except Exception as e:
+        print(f"Warning: Could not initialize Qdrant collection: {e}")
+        print("App will continue but Qdrant operations may fail")
 
 # ---------- Upsert ----------
 def upsert_chunks_to_qdrant(chunks: List[str], metas: List[dict]):
     if not chunks:
         return
+    
+    if QDRANT_URL.lower() == "skip":
+        print("Qdrant skipped, not upserting chunks")
+        return
+        
     print(f"Upserting {len(chunks)} chunks to Qdrant...")
 
     chunk_ids = []
@@ -521,7 +550,12 @@ def upsert_chunks_to_qdrant(chunks: List[str], metas: List[dict]):
             points.append(PointStruct(id=pid, vector=E[j].tolist(), payload=payload))
             global_idx_counter += 1
 
-        qd.upsert(collection_name=QDRANT_COLLECTION, points=points)
+        try:
+            qd.upsert(collection_name=QDRANT_COLLECTION, points=points)
+        except Exception as e:
+            print(f"Error upserting to Qdrant: {e}")
+            if "authentication" in str(e).lower() or "forbidden" in str(e).lower():
+                print("Authentication error - check your Qdrant API key")
 
     print("✓ Qdrant upsert complete")
 
@@ -531,6 +565,9 @@ def upsert_chunks_to_qdrant(chunks: List[str], metas: List[dict]):
 # ---------- Retrieval ----------
 def qdrant_search_multi(queries: List[Tuple[str, float]], doc_ids: List[str], limit: int) -> List[dict]:
     """Search with multiple weighted queries"""
+    if QDRANT_URL.lower() == "skip":
+        return []
+        
     all_results = {}
     
     for query_text, weight in queries:
@@ -538,25 +575,29 @@ def qdrant_search_multi(queries: List[Tuple[str, float]], doc_ids: List[str], li
         
         flt = Filter(must=[FieldCondition(key="doc_id", match=MatchAny(any=doc_ids))])
         
-        res = qd.search(
-            collection_name=QDRANT_COLLECTION,
-            query_vector=qv,
-            limit=limit,
-            query_filter=flt,
-            with_payload=True,
-            score_threshold=SCORE_THRESHOLD,
-        )
-        
-        # If no results with threshold, try with lower threshold
-        if not res and weight == 1.0:  # Only for main query
+        try:
             res = qd.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=qv,
                 limit=limit,
                 query_filter=flt,
                 with_payload=True,
-                score_threshold=max(0.1, SCORE_THRESHOLD - 0.05),
+                score_threshold=SCORE_THRESHOLD,
             )
+            
+            # If no results with threshold, try with lower threshold
+            if not res and weight == 1.0:  # Only for main query
+                res = qd.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector=qv,
+                    limit=limit,
+                    query_filter=flt,
+                    with_payload=True,
+                    score_threshold=max(0.1, SCORE_THRESHOLD - 0.05),
+                )
+        except Exception as e:
+            print(f"Error searching Qdrant: {e}")
+            return []
         
         # Aggregate weighted results
         for r in res:
@@ -759,6 +800,7 @@ def health():
             "gen_model": GEN_MODEL,
             "use_rerank": USE_RERANK,
             "qdrant_collection": QDRANT_COLLECTION,
+            "qdrant_connected": QDRANT_URL.lower() != "skip",
             "max_workers": MAX_WORKERS,
             "embedding_cache_size": len(embedding_cache),
         },
@@ -849,4 +891,5 @@ if __name__ == "__main__":
     print(f"  - Context: {MAX_CTX_CHUNKS} chunks | Rerank top {RERANK_TOP_K}")
     print(f"  - Models: {EMBED_MODEL} | {GEN_MODEL}")
     print(f"  - Domain: AGNOSTIC (works with any document type)")
+    print(f"  - Qdrant: {QDRANT_URL}")
     uvicorn.run(app, host="0.0.0.0", port=8000)
