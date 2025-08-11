@@ -1,7 +1,7 @@
 # Domain-Agnostic RAG System - Fixed with Qdrant Authentication
 # Works for ANY document type: medical, legal, technical, financial, etc.
 # NOTE: pip install -U pymupdf4llm mammoth html2text qdrant-client fastapi uvicorn python-dotenv openai rank-bm25 cohere
-
+from fastapi.middleware.cors import CORSMiddleware
 import os, io, re, html, json, hashlib, uuid, requests, unicodedata, time, pickle, atexit
 from typing import List, Union, Dict, Optional, Tuple
 import numpy as np
@@ -98,6 +98,13 @@ md_chunker = RecursiveCharacterTextSplitter(
 
 app = FastAPI(title="Universal RAG System")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Initialize Qdrant WITH AUTHENTICATION
 print(f"Connecting to Qdrant at: {QDRANT_URL}")
 if QDRANT_API_KEY:
