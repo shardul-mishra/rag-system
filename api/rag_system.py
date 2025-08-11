@@ -225,22 +225,11 @@ def clean_for_embedding(text: str) -> str:
 def fetch(url: str) -> bytes:
     try:
         print(f"Fetching: {url[:100]}...")
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-        })
-        timeout = 60 if "blob.core.windows.net" in url else 30
-        r = session.get(url, timeout=timeout, stream=True, allow_redirects=True)
+        # Simple direct request - no special headers
+        r = requests.get(url, timeout=60)
         r.raise_for_status()
-        content = b"".join(chunk for chunk in r.iter_content(chunk_size=8192) if chunk)
-        if content[:3] == b"\xef\xbb\xbf":
-            content = content[3:]
-        print(f"Downloaded {len(content)} bytes")
-        return content
+        print(f"Downloaded {len(r.content)} bytes")
+        return r.content
     except Exception as e:
         print(f"Error fetching {url}: {e}")
         raise
