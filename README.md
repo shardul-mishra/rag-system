@@ -1,4 +1,3 @@
-Here’s the full README content, written out for you:
 
 ````
 # Agentic RAG System
@@ -87,13 +86,6 @@ The `streamlit_app.py` script exposes a simple UI. It loads default documents, a
 └── .gitignore              # excludes caches, virtualenv and secrets
 ```
 
-## Known issues and TODOs
-
-* The main script looks for `data/urls.txt` but the repository contains `data/url.txt`, so `urls_file.exists()` will return false and only default URLs will be used.  Either rename `data/url.txt` to `urls.txt` or update the code.
-* In `DocumentProcessor.load_documents`, the code unconditionally loads all PDFs in the `data` directory for every source, which could lead to duplicated documents.  Consider refactoring to check the source type and load PDFs only when the source points to a PDF directory.
-* The `load_from_pdf` function currently loads an entire directory instead of a single PDF.
-* Add more robust error handling for network failures and invalid files.
-* Consider logging and unit tests to improve reliability.
 
 ## Contributing
 
@@ -103,7 +95,4 @@ Contributions, issues and feature requests are welcome!  Feel free to check the 
 
 This project is released under the MIT License. See the `LICENSE` file for more details.
 
-```
 
-You can copy this text directly into your `README.md` file in the repository and commit it. It provides an overview, setup instructions, usage notes, project layout and known issues with citations back to the relevant code lines. Let me know if you'd like help committing it or making any edits!
-```
