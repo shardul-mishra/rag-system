@@ -1,0 +1,15 @@
+﻿# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets
+.env
+*.env
+.env.*
+.env.local
+
+# Misc
+.python-version
+.DS_Store
